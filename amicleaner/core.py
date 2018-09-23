@@ -6,7 +6,11 @@ from __future__ import absolute_import
 from builtins import object
 import boto3
 from botocore.exceptions import ClientError
+from botocore.config import Config
+
+from .resources.config import BOTO3_RETRIES
 from .resources.models import AMI
+
 from datetime import datetime
 
 
@@ -15,7 +19,7 @@ class OrphanSnapshotCleaner(object):
     """ Finds and removes ebs snapshots left orphaned """
 
     def __init__(self, ec2=None):
-        self.ec2 = ec2 or boto3.client('ec2')
+        self.ec2 = ec2 or boto3.client('ec2', config=Config(retries={'max_attempts': BOTO3_RETRIES}))
 
     def get_snapshots_filter(self):
 
@@ -92,7 +96,7 @@ class OrphanSnapshotCleaner(object):
 class AMICleaner(object):
 
     def __init__(self, ec2=None):
-        self.ec2 = ec2 or boto3.client('ec2')
+        self.ec2 = ec2 or boto3.client('ec2', config=Config(retries={'max_attempts': BOTO3_RETRIES}))
 
     @staticmethod
     def get_ami_sorting_key(ami):
@@ -115,13 +119,14 @@ class AMICleaner(object):
             self.ec2.deregister_image(ImageId=ami.id)
             print("{0} deregistered".format(ami.id))
             for block_device in ami.block_device_mappings:
-                try:
-                    self.ec2.delete_snapshot(
-                        SnapshotId=block_device.snapshot_id
-                    )
-                except ClientError:
-                    failed_snapshots.append(block_device.snapshot_id)
-                print("{0} deleted\n".format(block_device.snapshot_id))
+                if block_device.snapshot_id is not None:
+                    try:
+                            self.ec2.delete_snapshot(
+                                SnapshotId=block_device.snapshot_id
+                            )
+                    except ClientError:
+                        failed_snapshots.append(block_device.snapshot_id)
+                    print("{0} deleted\n".format(block_device.snapshot_id))
 
         return failed_snapshots
 
